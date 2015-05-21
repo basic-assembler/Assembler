@@ -9,19 +9,20 @@
 #define REGCOUNT         16
 #define COMPARISONCOUNT  14
 #define MAXOPERANDS       3
-#define INSTRUCLENGTH     33
+#define INSTRUCLENGTH    33
 
 #define FALSE -1
 #define TRUE 0
+#define COMMENT 1
 
-#define LABELREPEAT     0
-#define INCOMPLETE      1
-#define COLONTWICE      2
-#define FALSEREGISTER   3
-#define FALSEMNEMONIC   4
-#define FALSEIMMEDIATE  5
-#define MULTILABEL      6
-#define NOFILE          7
+#define LABELREPEAT      0
+#define INCOMPLETE       1
+#define COLONTWICE       2
+#define FALSEREGISTER    3
+#define FALSEMNEMONIC    4
+#define FALSEIMMEDIATE   5
+#define MULTILABEL       6
+#define NOFILE           7
 #define FALSECONDITIONAL 8
 #define HIPHENTWICE      9
 #define EXTRAOPERAND    10
@@ -138,7 +139,7 @@ int updateSymbolTable(char s[ ],int lineCount){
         len=strlen(s);
         for(i=0;i<symTabCount;i++)
         {
-            if(!strcmp(s,listSymTab[i].label)) {
+            if(strcmp(s,listSymTab[i].label) != 0) {
                     printError(MULTILABEL,listSymTab[i].label ,listSymTab[i].address);
                     return FALSE;
              }
@@ -157,6 +158,7 @@ int getSymbol(char s[]){
                 return i;
          }
     }
+
     return FALSE;
 }
 
@@ -170,6 +172,7 @@ int checkLabel(char s[])
     }
     return TRUE;
 }
+
 int getMnemonic(char s[],int lineCount)
 {
     int i;
@@ -195,6 +198,7 @@ int getIntReg(char s[])
     }
     return FALSE;
 }
+
 int getFloatReg(char s[])
 {
     int i;
@@ -207,6 +211,7 @@ int getFloatReg(char s[])
     }
     return FALSE;
 }
+
 int getCompCode(char s[]){
       int i;
       for(i=0;i<COMPARISONCOUNT;i++) {
@@ -252,7 +257,7 @@ char* intToBin(int a)
     return binary;
 }
 
-int parser(char line[MAXLENGTH],int lineCount)
+int parser(char line[],int lineCount)
 {
     int flag = TRUE;
     int length;
@@ -265,7 +270,9 @@ int parser(char line[MAXLENGTH],int lineCount)
     int index;
     int index2;
     cleanBuffer();
+    if(line[0]=='/' && line[1]=='/')return COMMENT;
     ptr = strchr(tempLine,':');
+
     if(ptr != NULL)
     {
         ptr = strtok(tempLine,":");
@@ -281,6 +288,7 @@ int parser(char line[MAXLENGTH],int lineCount)
     }
 
     ptr = strchr(tempLine,'-');
+
     if(ptr != NULL)
     {
         ptr = strtok(tempLine,"-");
@@ -333,9 +341,8 @@ int parser(char line[MAXLENGTH],int lineCount)
 
     if(listMnemonic[index].addressMode == 1) //Parses for immediate addressing mode
     {
-        if( (strcmp(buf.mnemonic,"JUMP") != 0) && (strcmp(buf.mnemonic,"JUMP") != 0) )
+        if( (strcmp(buf.mnemonic,"JUMP") != 0) && (strcmp(buf.mnemonic,"CALL") != 0) )
         {
-            printf("Entered ");
             ptr = strtok(NULL,", ");
             if(ptr == NULL){printError(INCOMPLETE,line,lineCount);return FALSE;}
             strcpy(tempOperand,ptr);
@@ -384,29 +391,25 @@ void truncate(char str[])
 
 int firstPass(FILE *input)
 {
-   char line[MAXSTRLENGTH];
-   char tempLine[MAXSTRLENGTH];
-   int flag=TRUE;
-   int lineCount=0,length;
-   do
-   {
+    char line[MAXSTRLENGTH];
+    char tempLine[MAXSTRLENGTH];
+    int flag=TRUE;
+    int lineCount=0,length;
+    while(fgets(line,MAXSTRLENGTH,(FILE*)input))
+    {
         lineCount++;
-        fgets(line,MAXSTRLENGTH,(FILE*)input);
         truncate(line);
         strcpy(tempLine,line);
         length = strlen(line);
         if(length == 0)continue;
-        if(line[0]=='/' && line[1]=='/')continue;
         flag = parser(tempLine,lineCount);
         if(flag == FALSE)break;
-
-   }
-   while( (!feof(input) ) );
-   fclose(input);
-   return flag;
+    }
+    fclose(input);
+    return flag;
 }
 
-void secondPass(FILE* input,FILE* output)
+int secondPass(FILE* input,FILE* output)
 {
    char line[MAXSTRLENGTH];
    char tempLine[MAXSTRLENGTH];
@@ -415,37 +418,63 @@ void secondPass(FILE* input,FILE* output)
    int index,index1,temp;
    int regOpcode;
    char *tempBin;
+   int offset;
    int i;
-    while(fgets(line,MAXSTRLENGTH,(FILE*)input)){
-        memset(instrucLen,'0',INSTRUCLENGTH*sizeof(int));
+    while(fgets(line,MAXSTRLENGTH,(FILE*)input))
+    {
+        memset(instrucLen,'0',INSTRUCLENGTH*sizeof(char));
         instrucLen[32]='\0';
         lineCount++;
         truncate(line);
-        printf("Extracting line : '%s'\n",line);
         strcpy(tempLine,line);
         // Checking if contains Line
         length = strlen(line);
-        if(strcmp("\n",line) != 0)flag = parser(tempLine,lineCount);
-        if(flag == FALSE)break;
+        if(length == 0)continue;
+        else flag = parser(tempLine,lineCount);
+        if(flag == COMMENT)continue;
+        else if(flag == FALSE)break;
         indexBin=0;
-        //if((index=getSymbol(buf.label))!=FALSE)
-          //  fprintf(output,"%s ",intToBin(listSymTab[index].address));
-          if(buf.changeFlag==TRUE)
-          {
-              instrucLen[0]='1';
-          }
-          if(strcmp(buf.conditional,"")){
+        if(buf.changeFlag==TRUE)
+        {
+          instrucLen[0]='1';
+        }
+
+        if(strcmp(buf.conditional,"")){
             index=getCompCode(buf.conditional);
             tempBin=intToBin(listComp[index].code);
             for(i=0;i<strlen(tempBin);i++)
             {
                 instrucLen[5-strlen(tempBin)+i]=tempBin[i];
             }
-          }
+        }
+
+        if( strcmp(buf.mnemonic,"JUMP") == 0 || strcmp(buf.mnemonic,"CALL") == 0)
+        {
+            index=getSymbol(buf.label);
+            if(index==FALSE){
+            printError(NOLABEL,line,lineCount);
+            return FALSE;
+            }
+            if(index!=FALSE)
+            {
+                offset=listSymTab[index].address-lineCount;
+                if(offset<0)
+                {
+                    offset*=-1;
+                    instrucLen[17]='1';
+                }
+                tempBin=intToBin(offset);
+                for(i=0;i<strlen(tempBin);i++)
+                {
+                    instrucLen[32-strlen(tempBin)+i]=tempBin[i];
+                }
+            }
+        }
+
         index=getMnemonic(buf.mnemonic,lineCount);
         indexBin=0;
         tempBin=intToBin(listMnemonic[index].opcode);
-        //strcpy((instrucLen+17-strlen(tempBin)),tempBin);
+
         for(i=0;i<strlen(tempBin);i++)
         {
             instrucLen[17-strlen(tempBin)+i]=tempBin[i];
@@ -458,63 +487,62 @@ void secondPass(FILE* input,FILE* output)
         else if(listMnemonic[index].numOperands==0)
             instrucLen[10]=instrucLen[11]='1';
 
-        if(listMnemonic[index].addressMode==0)
+        if(listMnemonic[index].addressMode == 0)
         {
-            if(listMnemonic[index].opcode>=10 && listMnemonic[index].opcode<=19)
+            if(listMnemonic[index].opcode >= 10 && listMnemonic[index].opcode <= 19)
             {
-                for(index1=0;index1<listMnemonic[index].numOperands;index1++)
+                for(index1 = 0; index1 < listMnemonic[index].numOperands; index1++)
                 {
-                    indexBin=0;
-                    regOpcode=getFloatReg(buf.operand[index1]);
-                    tempBin=intToBin(regOpcode);
+                    indexBin = 0;
+                    regOpcode = getFloatReg(buf.operand[index1]);
+                    tempBin = intToBin(regOpcode);
                     for(i=0;i<strlen(tempBin);i++)
                     {
                         instrucLen[22+(index1*5)-strlen(tempBin)+i]=tempBin[i];
                     }
-                    //strcpy((instrucLen+22+(index1*5)-strlen(tempBin)),tempBin);
                 }
             }
             else
             {
-                for(index1=0;index1<listMnemonic[index].numOperands;index1++)
+                    for(index1=0;index1<listMnemonic[index].numOperands;index1++)
+                    {
+                        indexBin=0;
+                        regOpcode=getIntReg(buf.operand[index1]);
+                        tempBin=intToBin(regOpcode);
+                        for(i=0;i<strlen(tempBin);i++)
+                        {
+                            instrucLen[22+(index1*5)-strlen(tempBin)+i]=tempBin[i];
+                        }
+                    }
+            }
+        }else
+        {
+            if( strcmp(buf.mnemonic,"JUMP") != 0 && strcmp(buf.mnemonic,"CALL") != 0)
+            {
+                indexBin=0;
+                regOpcode=getIntReg(buf.operand[0]);
+                tempBin=intToBin(regOpcode);
+                for(i=0;i<strlen(tempBin);i++)
+                {
+                    instrucLen[22-strlen(tempBin)+i]=tempBin[i];
+                }
+                for(index1=1;index1<listMnemonic[index].numOperands;index1++)
                 {
                     indexBin=0;
-                    regOpcode=getIntReg(buf.operand[index1]);
+                    temp=atoi(buf.operand[index1]);
                     tempBin=intToBin(regOpcode);
-                    //strcpy((instrucLen+22+(index1*5)-strlen(tempBin)),tempBin);
                     for(i=0;i<strlen(tempBin);i++)
                     {
                         instrucLen[22+(index1*5)-strlen(tempBin)+i]=tempBin[i];
                     }
                 }
-            }
-
-        }else
-        {
-            indexBin=0;
-            regOpcode=getIntReg(buf.operand[0]);
-            tempBin=intToBin(regOpcode);
-            //strcpy((instrucLen+22-strlen(tempBin)),tempBin);
-            for(i=0;i<strlen(tempBin);i++)
-            {
-                instrucLen[22-strlen(tempBin)+i]=tempBin[i];
-            }
-            for(index1=1;index1<listMnemonic[index].numOperands;index1++)
-            {
-                indexBin=0;
-                temp=atoi(buf.operand[index1]);
-                tempBin=intToBin(regOpcode);
-                for(i=0;i<strlen(tempBin);i++)
-                {
-                    instrucLen[22+(index1*5)-strlen(tempBin)+i]=tempBin[i];
-                }
-                //strcpy((instrucLen+22+(index1*5)-strlen(tempBin)),tempBin);
             }
         }
         fprintf(output,"%s",instrucLen);
     }
     fclose(input);
     fclose(output);
+    return TRUE;
 }
 
 int main()
@@ -540,6 +568,8 @@ int main()
     strcpy(outFilename,filename);
     strcpy(outFilename+strlen(filename)-4,"Out.txt");
     output = fopen(outFilename, "w");
-    secondPass(input,output);
+    flag = secondPass(input,output);
+    if(flag != FALSE)
+         printf("Successfully generated %s file\n",outFilename);
     return 0;
 }
